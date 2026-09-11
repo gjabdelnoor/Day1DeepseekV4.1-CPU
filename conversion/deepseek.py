@@ -938,6 +938,8 @@ class DeepseekV4DSparkModel(DeepseekV4Model):
         "main_norm.weight": (gguf.MODEL_TENSOR.ENC_OUTPUT_NORM, ".weight"),
         "markov_head.markov_w1.weight": (gguf.MODEL_TENSOR.DSPARK_MARKOV_W1, ".weight"),
         "markov_head.markov_w2.weight": (gguf.MODEL_TENSOR.DSPARK_MARKOV_W2, ".weight"),
+        "markov_head.embed.weight": (gguf.MODEL_TENSOR.DSPARK_MARKOV_W1, ".weight"),
+        "markov_head.head.weight": (gguf.MODEL_TENSOR.DSPARK_MARKOV_W2, ".weight"),
         "confidence_head.proj.weight": (gguf.MODEL_TENSOR.DSPARK_CONF_PROJ, ".weight"),
     }
 
@@ -1331,3 +1333,12 @@ class DeepseekV41Model(DeepseekV4Model):
             if tensor_name in v41_only:
                 return v41_only[tensor_name]
         return super()._map_dsv4_tensor_name(name, bid)
+
+
+class DeepseekV41DSparkModel(DeepseekV4DSparkModel, DeepseekV41Model):
+    model_arch = gguf.MODEL_ARCH.DFLASH
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.hparams["n_routed_experts"] = self.hparams["dspark_n_routed_experts"]
+        self.hparams["num_experts_per_tok"] = self.hparams["dspark_num_experts_per_tok"]

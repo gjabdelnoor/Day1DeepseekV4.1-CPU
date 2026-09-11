@@ -267,11 +267,11 @@ def main() -> None:
             sys.exit(1)
 
         if args.dspark:
-            if is_mistral_format or model_architecture != "DeepseekV4ForCausalLM":
-                logger.error("--dspark is only supported for DeepseekV4ForCausalLM")
+            if is_mistral_format or model_architecture not in ("DeepseekV4ForCausalLM", "DeepseekV41ForCausalLM"):
+                logger.error("--dspark is only supported for DeepseekV4ForCausalLM and DeepseekV41ForCausalLM")
                 sys.exit(1)
-            from conversion.deepseek import DeepseekV4DSparkModel
-            model_class = DeepseekV4DSparkModel
+            from conversion.deepseek import DeepseekV4DSparkModel, DeepseekV41DSparkModel
+            model_class = DeepseekV41DSparkModel if model_architecture == "DeepseekV41ForCausalLM" else DeepseekV4DSparkModel
 
         if args.mtp or args.no_mtp:
             if not model_class.supports_mtp_export:
