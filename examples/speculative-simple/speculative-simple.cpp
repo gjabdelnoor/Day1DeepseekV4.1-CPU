@@ -10,9 +10,84 @@
 #include <cstdio>
 #include <cstring>
 #include <cinttypes>
+#include <cstdlib>
+#include <fstream>
 #include <string>
 #include <vector>
 #include <utility>
+
+#if !defined(_WIN32)
+#include <fcntl.h>
+#include <unistd.h>
+#endif
+
+static void evict_files_from_env() {
+#if !defined(_WIN32)
+    const char * value = std::getenv("DS41_CACHE_EVICT_FILES");
+    if (value == nullptr || value[0] == '\0') {
+        return;
+    }
+
+    std::string files(value);
+    size_t begin = 0;
+    while (begin <= files.size()) {
+        const size_t end = files.find(':', begin);
+        const std::string path = files.substr(begin, end - begin);
+        if (!path.empty()) {
+            const int fd = open(path.c_str(), O_RDONLY | O_CLOEXEC);
+            if (fd >= 0) {
+                const int err = posix_fadvise(fd, 0, 0, POSIX_FADV_DONTNEED);
+                close(fd);
+                if (err == 0) {
+                    LOG_INF("released non-PLE file cache after model load: %s\n", path.c_str());
+                } else {
+                    LOG_WRN("could not release file cache for %s: %s\n", path.c_str(), strerror(err));
+                }
+            }
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        begin = end + 1;
+    }
+#endif
+}
+
+static bool warm_ple_files_from_env() {
+    const char * value = std::getenv("DS41_PLE_WARM_FILES");
+    if (value == nullptr || value[0] == '\0') {
+        return true;
+    }
+
+    evict_files_from_env();
+
+    std::string files(value);
+    std::vector<char> buffer(16 * 1024 * 1024);
+    size_t begin = 0;
+    while (begin <= files.size()) {
+        const size_t end = files.find(':', begin);
+        const std::string path = files.substr(begin, end - begin);
+        if (!path.empty()) {
+            LOG_INF("warming PLE into page cache after model load: %s\n", path.c_str());
+            std::ifstream input(path, std::ios::binary);
+            if (!input) {
+                LOG_ERR("failed to open PLE shard: %s\n", path.c_str());
+                return false;
+            }
+            uint64_t n_read = 0;
+            while (input) {
+                input.read(buffer.data(), buffer.size());
+                n_read += input.gcount();
+            }
+            LOG_INF("warmed PLE shard: %s (%" PRIu64 " bytes)\n", path.c_str(), n_read);
+        }
+        if (end == std::string::npos) {
+            break;
+        }
+        begin = end + 1;
+    }
+    return true;
+}
 
 int main(int argc, char ** argv) {
     std::setlocale(LC_NUMERIC, "C");
@@ -61,6 +136,10 @@ int main(int argc, char ** argv) {
 
         params.speculative.draft.ctx_tgt = ctx_tgt;
         params.speculative.draft.ctx_dft = spec_init->context();
+    }
+
+    if (!warm_ple_files_from_env()) {
+        return 1;
     }
 
     llama_context * ctx_dft = params.speculative.draft.ctx_dft;
